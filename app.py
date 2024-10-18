@@ -1,76 +1,40 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
-import sqlite3
-import random
-import string
+from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask_sqlalchemy import SQLAlchemy
+import string, random
 
 app = Flask(__name__)
-app.secret_key = 'supersecretkey'  # Needed for flashing messages
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///urls.db'
+db = SQLAlchemy(app)
 
-# Connect to the SQLite database
-def get_db():
-    conn = sqlite3.connect('url_shortener.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+class URL(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    original_url = db.Column(db.String(500), nullable=False)
+    short_url = db.Column(db.String(6), unique=True, nullable=False)
 
-# Generate a random short code
-def generate_short_code(length=6):
-    characters = string.ascii_letters + string.digits
-    return ''.join(random.choice(characters) for _ in range(length))
+def generate_short_url():
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=6))
 
-# Validate URL
-def is_valid_url(url):
-    return url.startswith('http://') or url.startswith('https://')
-
-# Main page
 @app.route('/')
 def index():
-    return render_template('index.html')
+    past_urls = URL.query.all()
+    return render_template('index.html', past_urls=past_urls)
 
-# URL Shortener route
 @app.route('/shorten', methods=['POST'])
 def shorten():
-    original_url = request.form['original_url'].strip()
-    
-    # Check if URL is valid
-    if not is_valid_url(original_url):
-        flash("Invalid URL. Please include http:// or https://", 'danger')
-        return redirect(url_for('index'))
-    
-    conn = get_db()
-    short_code = generate_short_code()
+    original_url = request.form['original_url']
+    short_url = generate_short_url()
+    new_url = URL(original_url=original_url, short_url=short_url)
+    db.session.add(new_url)
+    db.session.commit()
+    return jsonify({'short_url': short_url})
 
-    try:
-        # Insert shortened URL into the database
-        conn.execute('INSERT INTO urls (original_url, short_code) VALUES (?, ?)', (original_url, short_code))
-        conn.commit()
-        short_url = request.url_root + short_code
-        flash(f"Shortened URL: {short_url}", 'success')
-    except sqlite3.IntegrityError:
-        flash("Error shortening the URL. Please try again.", 'danger')
-    
-    conn.close()
-    return render_template('index.html', short_url=short_url)
-
-# Redirection route
-@app.route('/<short_code>')
-def redirect_to_url(short_code):
-    conn = get_db()
-    cur = conn.execute('SELECT original_url, clicks FROM urls WHERE short_code = ?', (short_code,))
-    row = cur.fetchone()
-
-    if row:
-        original_url, clicks = row
-        # Increment click count
-        conn.execute('UPDATE urls SET clicks = ? WHERE short_code = ?', (clicks + 1, short_code))
-        conn.commit()
-        conn.close()
-        
-        # Redirect to the original URL
-        return redirect(original_url)
-    else:
-        flash("Invalid URL", 'danger')
-        conn.close()
-        return redirect(url_for('index'))
+@app.route('/<short_url>')
+def redirect_url(short_url):
+    url = URL.query.filter_by(short_url=short_url).first_or_404()
+    return redirect(url.original_url)
 
 if __name__ == '__main__':
+    # Use app.app_context() to avoid the context error
+    with app.app_context():
+        db.create_all()
     app.run(debug=True)
