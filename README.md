@@ -1,7 +1,3 @@
-Here's a structured and informative README for your Flask-based URL shortener project:
-
----
-
 # URL Shortener
 
 A simple, fast, and reliable URL shortener built using Flask. This application takes long URLs and shortens them into concise, easy-to-share links. Users can manage, share, and track their shortened URLs with ease, making it a practical tool for anyone looking to organize or optimize their online links.
